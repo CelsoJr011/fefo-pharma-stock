@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FEFO Pharma Stock — batch & expiry control</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>FEFO Pharma Stock</h1>
+      <p class="subtitle">Batch &amp; expiry control for a pharmaceutical warehouse</p>
+    </div>
+    <button id="reset-data" class="btn btn-ghost" type="button">Reset sample data</button>
+  </header>
+
+  <main class="container">
+    <section class="cards" id="summary" aria-label="Stock summary"></section>
+
+    <section class="panel">
+      <h2>Picking suggestion</h2>
+      <p class="hint">Pick a product and a quantity. The app suggests which batches to take, following FEFO and skipping anything that shouldn't leave the warehouse.</p>
+
+      <form id="picking-form" class="picking-form">
+        <label>
+          Product
+          <select id="picking-sku" required></select>
+        </label>
+        <label>
+          Quantity
+          <input id="picking-qty" type="number" min="1" step="1" value="50" required>
+        </label>
+        <button class="btn" type="submit">Suggest picking</button>
+      </form>
+
+      <div id="picking-result" class="picking-result" aria-live="polite"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Batches in stock</h2>
+        <div class="filters">
+          <input id="search" type="search" placeholder="Search product or batch…" aria-label="Search">
+          <select id="status-filter" aria-label="Filter by status">
+            <option value="all">All statuses</option>
+            <option value="expired">Expired</option>
+            <option value="critical">Critical (≤ 30 days)</option>
+            <option value="warning">Warning (≤ 90 days)</option>
+            <option value="ok">OK</option>
+            <option value="blocked">Blocked</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Batch</th>
+              <th>Expiry</th>
+              <th>Days left</th>
+              <th>Qty</th>
+              <th>Location</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="batch-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Receive a new batch</h2>
+      <form id="batch-form" class="batch-form">
+        <label>SKU <input name="sku" required placeholder="DIP-500"></label>
+        <label>Product <input name="product" required placeholder="Dipyrone 500mg — 10 tablets"></label>
+        <label>Batch <input name="batch" required placeholder="L25B100"></label>
+        <label>Expiry date <input name="expiry" type="date" required></label>
+        <label>Quantity <input name="quantity" type="number" min="1" step="1" required></label>
+        <label>Location <input name="location" required placeholder="A-01-01"></label>
+        <label>
+          Storage
+          <select name="storage">
+            <option value="ambient">Ambient (15–30 °C)</option>
+            <option value="cold">Cold chain (2–8 °C)</option>
+          </select>
+        </label>
+        <button class="btn" type="submit">Add batch</button>
+      </form>
+      <p id="form-message" class="form-message" role="status"></p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    Fictional data, built for study. Made by <a href="https://github.com/CelsoJr011">Celso Junior</a>.
+  </footer>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
