@@ -51,6 +51,10 @@ So I built a small tool around that one decision: look at the batches in stock, 
 - Refuses duplicated batch numbers and batches that are already expired
 - Block / release a batch (quality hold, damaged packaging, recall…)
 
+**Three languages: 🇺🇸 EN · 🇧🇷 PT · 🇫🇷 FR**
+- Buttons in the header switch the whole screen: labels, statuses, messages, picking instructions and even the sample product names
+- The choice is remembered; on the first visit the app follows the browser language
+
 **Other**
 - Data saved in the browser (`localStorage`)
 - "Reset sample data" button to start over
@@ -109,6 +113,21 @@ Skipped: L24A118 (expired), L24B207 (too close to expiry to ship)
 
 This one cost me a failing test. In JavaScript, `new Date('2026-03-10')` is read as **midnight UTC**. Here in Brazil (UTC-3), that becomes 9 PM on March 9th — so a batch could show one day less than it really has. The fix was to read `YYYY-MM-DD` strings as **local dates** and compare only calendar days, ignoring the time. I ran the tests with both `TZ=UTC` and `TZ=America/Sao_Paulo` to make sure.
 
+### 5. Translations
+
+I speak Portuguese, English and French, so I wanted the tool to work in all three. Every text on the screen comes from `js/i18n.js`, one dictionary per language, with `{placeholders}` for numbers and batch codes:
+
+```js
+translate('pt', 'days.left', { n: 12 });  // "12 dias"
+translate('fr', 'days.ago', { n: 5 });    // "il y a 5 jours"
+```
+
+A few details I cared about:
+- If a key is missing, it falls back to English and then to the key itself, so the screen never breaks.
+- A test checks that PT and FR have exactly the same keys as EN — forgetting a translation fails `npm test`.
+- Searching works with the translated name *and* the original one ("dipirona" or "dipyrone" find the same batch).
+- Products typed by the user stay as typed. Free text can't be translated reliably, so I didn't try.
+
 ---
 
 ## Technical decisions
@@ -131,9 +150,11 @@ fefo-pharma-stock/
 ├── js/
 │   ├── fefo.js         # Business rules: status, FEFO sorting, picking, summary
 │   ├── sample-data.js  # Fictional batches, dates relative to today
-│   └── app.js          # Screen: rendering, events, localStorage
+│   ├── i18n.js         # EN / PT / FR texts and the translate() helper
+│   └── app.js          # Screen: rendering, events, language switch, localStorage
 ├── tests/
-│   └── fefo.test.js    # Unit tests for the rules (node:test)
+│   ├── fefo.test.js    # Unit tests for the rules (node:test)
+│   └── i18n.test.js    # Makes sure no language is missing a text
 ├── package.json
 └── LICENSE
 ```
@@ -188,7 +209,7 @@ npm test
 
 ## 🇧🇷 Resumo em português
 
-Ferramenta de controle de lotes e validade para um centro de distribuição de medicamentos. Ela mostra o status de cada lote (vencido, crítico, atenção, ok, bloqueado) e sugere a separação de pedidos seguindo o **FEFO** (o que vence primeiro sai primeiro). Na sugestão, ela ignora lotes vencidos, bloqueados ou com validade curta demais para enviar à loja. Feito com HTML, CSS e JavaScript puro, com testes das regras de negócio. Os dados são fictícios.
+Ferramenta de controle de lotes e validade para um centro de distribuição de medicamentos. Ela mostra o status de cada lote (vencido, crítico, atenção, ok, bloqueado) e sugere a separação de pedidos seguindo o **FEFO** (o que vence primeiro sai primeiro). Na sugestão, ela ignora lotes vencidos, bloqueados ou com validade curta demais para enviar à loja. A tela funciona em português, inglês e francês (botões EN / PT / FR no topo). Feito com HTML, CSS e JavaScript puro, com testes das regras de negócio e das traduções. Os dados são fictícios.
 
 ---
 
