@@ -1,23 +1,17 @@
 import { daysUntilExpiry, getBatchStatus, sortByFefo, suggestPicking, summarize } from './fefo.js';
 import { buildSampleBatches } from './sample-data.js';
+import { LANGUAGES, detectLanguage, saveLanguage, translate, hasTranslation } from './i18n.js';
 
 const STORAGE_KEY = 'fefo-pharma-stock:batches';
 
-const STATUS_LABELS = {
-  expired: 'Expired',
-  critical: 'Critical',
-  warning: 'Warning',
-  ok: 'OK',
-  blocked: 'Blocked',
-};
-
-const SKIP_REASONS = {
-  expired: 'expired',
-  blocked: 'blocked (quality hold)',
-  'short shelf life': 'too close to expiry to ship',
-};
-
 let batches = loadBatches();
+let lang = detectLanguage();
+
+// Kept so the picking result can be redrawn when the language changes,
+// instead of disappearing and forcing the user to ask again.
+let lastPicking = null;
+
+const t = (key, params) => translate(lang, key, params);
 
 // --- persistence ---------------------------------------------------------
 
@@ -55,9 +49,41 @@ function formatDate(isoDate) {
 }
 
 function describeDays(days) {
-  if (days < 0) return `${Math.abs(days)} days ago`;
-  if (days === 0) return 'today';
-  return `${days} days`;
+  if (days === 0) return t('days.today');
+  if (days === -1) return t('days.agoOne');
+  if (days < 0) return t('days.ago', { n: Math.abs(days) });
+  if (days === 1) return t('days.leftOne');
+  return t('days.left', { n: days });
+}
+
+// Sample products have a translation per SKU. Anything the user typed in the
+// form is shown exactly as typed — there's no way to translate free text.
+function productName(batch) {
+  const key = `product.${batch.sku}`;
+  return hasTranslation(lang, key) ? t(key) : batch.product;
+}
+
+// --- static texts --------------------------------------------------------
+
+function applyStaticTranslations() {
+  document.documentElement.lang = LANGUAGES[lang].locale;
+  document.title = t('page.title');
+
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+    el.placeholder = t(el.dataset.i18nPlaceholder);
+  });
+  document.querySelectorAll('[data-i18n-aria]').forEach((el) => {
+    el.setAttribute('aria-label', t(el.dataset.i18nAria));
+  });
+
+  document.querySelectorAll('[data-lang]').forEach((button) => {
+    const active = button.dataset.lang === lang;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
 }
 
 // --- rendering -----------------------------------------------------------
@@ -65,13 +91,13 @@ function describeDays(days) {
 function renderSummary() {
   const s = summarize(batches);
   const cards = [
-    { label: 'Batches', value: s.batches },
-    { label: 'Units in stock', value: s.units.toLocaleString('en-US') },
-    { label: 'Expired', value: s.expired, css: 'expired' },
-    { label: 'Critical (≤ 30d)', value: s.critical, css: 'critical' },
-    { label: 'Warning (≤ 90d)', value: s.warning, css: 'warning' },
-    { label: 'Blocked', value: s.blocked, css: 'blocked' },
-    { label: 'Cold chain batches', value: s.coldChain },
+    { label: t('summary.batches'), value: s.batches },
+    { label: t('summary.units'), value: s.units.toLocaleString(LANGUAGES[lang].locale) },
+    { label: t('summary.expired'), value: s.expired, css: 'expired' },
+    { label: t('summary.critical'), value: s.critical, css: 'critical' },
+    { label: t('summary.warning'), value: s.warning, css: 'warning' },
+    { label: t('summary.blocked'), value: s.blocked, css: 'blocked' },
+    { label: t('summary.coldChain'), value: s.coldChain },
   ];
 
   document.getElementById('summary').innerHTML = cards
@@ -92,15 +118,17 @@ function renderTable() {
   const rows = sortByFefo(batches)
     .map((batch) => ({ batch, status: getBatchStatus(batch), days: daysUntilExpiry(batch.expiry) }))
     .filter(({ batch, status }) => {
-      const matchesText = `${batch.product} ${batch.batch} ${batch.sku}`.toLowerCase().includes(search);
+      // Search both the translated name and the original one, so typing
+      // "dipirona" or "dipyrone" finds the same batch in any language.
+      const haystack = `${productName(batch)} ${batch.product} ${batch.batch} ${batch.sku}`.toLowerCase();
       const matchesStatus = statusFilter === 'all' || status === statusFilter;
-      return matchesText && matchesStatus;
+      return haystack.includes(search) && matchesStatus;
     });
 
   const tbody = document.getElementById('batch-rows');
 
   if (rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8">No batches found.</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="8">${t('table.empty')}</td></tr>`;
     return;
   }
 
@@ -108,18 +136,18 @@ function renderTable() {
     .map(({ batch, status, days }) => `
       <tr>
         <td>
-          ${escapeHtml(batch.product)}
-          ${batch.storage === 'cold' ? '<span class="cold-tag" title="Store between 2 and 8 °C">❄ 2–8 °C</span>' : ''}
+          ${escapeHtml(productName(batch))}
+          ${batch.storage === 'cold' ? `<span class="cold-tag" title="${t('table.coldTitle')}">❄ 2–8 °C</span>` : ''}
         </td>
         <td>${escapeHtml(batch.batch)}</td>
         <td>${formatDate(batch.expiry)}</td>
         <td>${describeDays(days)}</td>
         <td>${batch.quantity}</td>
         <td>${escapeHtml(batch.location)}</td>
-        <td><span class="badge ${status}">${STATUS_LABELS[status]}</span></td>
+        <td><span class="badge ${status}">${t(`status.${status}`)}</span></td>
         <td>
           <button class="btn-small" type="button" data-toggle-block="${escapeHtml(batch.batch)}">
-            ${batch.blocked ? 'Release' : 'Block'}
+            ${batch.blocked ? t('table.release') : t('table.block')}
           </button>
         </td>
       </tr>`)
@@ -132,32 +160,43 @@ function renderSkuOptions() {
 
   // One option per SKU, even when the product has several batches.
   const products = new Map();
-  for (const b of batches) products.set(b.sku, b.product);
+  for (const b of batches) products.set(b.sku, productName(b));
 
   select.innerHTML = [...products]
-    .sort((a, b) => a[1].localeCompare(b[1]))
+    .sort((a, b) => a[1].localeCompare(b[1], LANGUAGES[lang].locale))
     .map(([sku, product]) => `<option value="${escapeHtml(sku)}">${escapeHtml(product)}</option>`)
     .join('');
 
   if (products.has(current)) select.value = current;
 }
 
-function renderPickingResult(result, requestedQty) {
+function renderPickingResult() {
   const box = document.getElementById('picking-result');
+  if (!lastPicking) {
+    box.innerHTML = '';
+    return;
+  }
+
+  const { result, requestedQty } = lastPicking;
 
   const picksHtml = result.picks.length
     ? `<ol>${result.picks
-        .map((p) => `<li>Take <strong>${p.quantity}</strong> from batch <strong>${escapeHtml(p.batch)}</strong> at ${escapeHtml(p.location)} (expires ${formatDate(p.expiry)})</li>`)
+        .map((p) => `<li>${t('picking.take', {
+          qty: p.quantity,
+          batch: escapeHtml(p.batch),
+          location: escapeHtml(p.location),
+          date: formatDate(p.expiry),
+        })}</li>`)
         .join('')}</ol>`
-    : '<p>No batch can be picked for this product right now.</p>';
+    : `<p>${t('picking.none')}</p>`;
 
   const missingHtml = result.missingQty > 0
-    ? `<p class="missing">Short by ${result.missingQty} of ${requestedQty} units — let the team know before closing the order.</p>`
+    ? `<p class="missing">${t('picking.missing', { missing: result.missingQty, requested: requestedQty })}</p>`
     : '';
 
   const skippedHtml = result.skipped.length
-    ? `<p class="skipped">Skipped: ${result.skipped
-        .map((s) => `${escapeHtml(s.batch)} (${SKIP_REASONS[s.reason]})`)
+    ? `<p class="skipped">${t('picking.skipped')} ${result.skipped
+        .map((s) => `${escapeHtml(s.batch)} (${t(`skip.${s.reason}`)})`)
         .join(', ')}</p>`
     : '';
 
@@ -165,30 +204,51 @@ function renderPickingResult(result, requestedQty) {
 }
 
 function renderAll() {
+  applyStaticTranslations();
   renderSummary();
   renderTable();
   renderSkuOptions();
+  renderPickingResult();
+}
+
+function showFormMessage(text, type) {
+  const message = document.getElementById('form-message');
+  message.textContent = text;
+  message.className = `form-message ${type}`;
 }
 
 // --- events --------------------------------------------------------------
+
+document.querySelectorAll('[data-lang]').forEach((button) => {
+  button.addEventListener('click', () => {
+    lang = button.dataset.lang;
+    saveLanguage(lang);
+    showFormMessage('', '');
+    renderAll();
+  });
+});
 
 document.getElementById('picking-form').addEventListener('submit', (event) => {
   event.preventDefault();
   const sku = document.getElementById('picking-sku').value;
   const qty = Number(document.getElementById('picking-qty').value);
 
-  try {
-    renderPickingResult(suggestPicking(batches, sku, qty), qty);
-  } catch (err) {
-    document.getElementById('picking-result').innerHTML = `<p class="missing">${escapeHtml(err.message)}</p>`;
+  // Checked here as well (fefo.js also validates) so the message can be
+  // shown in the selected language.
+  if (!Number.isInteger(qty) || qty <= 0) {
+    lastPicking = null;
+    document.getElementById('picking-result').innerHTML = `<p class="missing">${t('picking.invalidQty')}</p>`;
+    return;
   }
+
+  lastPicking = { result: suggestPicking(batches, sku, qty), requestedQty: qty };
+  renderPickingResult();
 });
 
 document.getElementById('batch-form').addEventListener('submit', (event) => {
   event.preventDefault();
   const form = event.target;
   const data = Object.fromEntries(new FormData(form));
-  const message = document.getElementById('form-message');
 
   const newBatch = {
     sku: data.sku.trim().toUpperCase(),
@@ -204,14 +264,12 @@ document.getElementById('batch-form').addEventListener('submit', (event) => {
   // Batch numbers are how a recall is traced, so a duplicate would make the
   // whole history unreliable. Better to refuse it right away.
   if (batches.some((b) => b.batch === newBatch.batch && b.sku === newBatch.sku)) {
-    message.textContent = `Batch ${newBatch.batch} already exists for ${newBatch.sku}.`;
-    message.className = 'form-message error';
+    showFormMessage(t('form.duplicate', { batch: newBatch.batch, sku: newBatch.sku }), 'error');
     return;
   }
 
   if (daysUntilExpiry(newBatch.expiry) < 0) {
-    message.textContent = 'This batch is already expired — it should not be received into stock.';
-    message.className = 'form-message error';
+    showFormMessage(t('form.expired'), 'error');
     return;
   }
 
@@ -219,8 +277,7 @@ document.getElementById('batch-form').addEventListener('submit', (event) => {
   saveBatches();
   renderAll();
   form.reset();
-  message.textContent = `Batch ${newBatch.batch} received.`;
-  message.className = 'form-message success';
+  showFormMessage(t('form.success', { batch: newBatch.batch }), 'success');
 });
 
 document.getElementById('batch-rows').addEventListener('click', (event) => {
@@ -240,9 +297,9 @@ document.getElementById('status-filter').addEventListener('change', renderTable)
 
 document.getElementById('reset-data').addEventListener('click', () => {
   batches = buildSampleBatches();
+  lastPicking = null;
   saveBatches();
   renderAll();
-  document.getElementById('picking-result').innerHTML = '';
 });
 
 renderAll();
