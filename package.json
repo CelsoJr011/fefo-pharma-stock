@@ -1,0 +1,12 @@
+{
+  "name": "fefo-pharma-stock",
+  "version": "1.0.0",
+  "description": "Batch and expiry control for a pharmaceutical warehouse using FEFO picking",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "npx serve ."
+  },
+  "author": "Celso de Azevedo Rodrigues Junior",
+  "license": "MIT"
+}
