@@ -70,6 +70,10 @@ body {
   gap: 1.5rem;
 }
 
+/* Grid items won't shrink below their content by default, so the wide table
+   was pushing the whole page sideways on small screens. */
+.container > * { min-width: 0; }
+
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
